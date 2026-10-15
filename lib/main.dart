@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'data/expense_repository.dart' as data;
 import 'services/receipt_ocr.dart';
+import 'services/gemini_service.dart';
 
 void main() {
   runApp(const ExpenseApp());
@@ -73,6 +74,7 @@ class ExpenseHome extends StatefulWidget {
 }
 
 class _ExpenseHomeState extends State<ExpenseHome> {
+  bool _isAiLoading = false;
   int selectedTab = 0;
   final double budget = 8000000;
   late List<Expense> expenses;
@@ -305,6 +307,197 @@ IconData _iconForCategory(String category) {
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+
+
+  Future<void> _analyzeWithGemini() async {
+    if (_isAiLoading) return;
+
+    if (expenses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hãy thêm giao dịch trước khi phân tích nhé!'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isAiLoading = true);
+
+    try {
+      final expenseData = expenses.map((e) {
+        return '- Ngày: ${e.date.toIso8601String().split('T').first}; '
+            'Tên: ${e.title}; Danh mục: ${e.category}; '
+            'Số tiền: ${e.amount.toStringAsFixed(0)} VND';
+      }).join('\n');
+
+      final result = await GeminiService().analyzeSpending(
+        expenseData: expenseData,
+        monthlyBudget: budget,
+      );
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 640,
+              maxHeight: MediaQuery.of(dialogContext).size.height * 0.88,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF173B32), Color(0xFF246C53)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFFB5E7CE),
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Phân tích chi tiêu AI',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Báo cáo tài chính cá nhân của bạn',
+                              style: TextStyle(
+                                color: Color(0xFFD4E8DE),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Đóng',
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _AiMetricCard(
+                          label: 'Chi tiêu tháng này',
+                          value: money(monthlySpent),
+                          icon: Icons.account_balance_wallet_rounded,
+                          color: const Color(0xFFE5F4EC),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AiMetricCard(
+                          label: 'Ngân sách còn lại',
+                          value: money(math.max(0, budget - monthlySpent).toDouble()),
+                          icon: Icons.savings_rounded,
+                          color: const Color(0xFFE8EDFF),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lightbulb_outline_rounded, color: green, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Nhận xét và đề xuất',
+                        style: TextStyle(
+                          color: dark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                    child: _AiAnalysisContent(text: result),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFEAEFEC))),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Gợi ý AI chỉ dựa trên dữ liệu giao dịch hiện có.',
+                          style: TextStyle(color: muted, fontSize: 11),
+                        ),
+                      ),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: green,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Hoàn tất'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể phân tích: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAiLoading = false);
+      }
     }
   }
 
@@ -1298,29 +1491,20 @@ IconData _iconForCategory(String category) {
                 ),
                 const SizedBox(height: 17),
                 OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog<void>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Trợ lý tài chính AI'),
-                        content: Text(
-                          'Bạn đã ghi nhận ${expenses.length} giao dịch '
-                          'với tổng số tiền ${money(totalSpent)}. '
-                          'Bước tiếp theo sẽ tích hợp Gemini để phân tích '
-                          'chi tiêu và đề xuất ngân sách. '
-                          'Hiện tại đây chưa phải kết quả do Gemini tạo.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Đóng'),
+                  onPressed: _isAiLoading ? null : _analyzeWithGemini,
+                  icon: _isAiLoading
+                      ? const SizedBox(
+                          width: 17,
+                          height: 17,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.auto_awesome_rounded, size: 17),
-                  label: const Text('Khám phá AI'),
+                        )
+                      : const Icon(Icons.auto_awesome_rounded, size: 17),
+                  label: Text(
+                    _isAiLoading ? 'Đang phân tích...' : 'Phân tích với Gemini',
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: BorderSide(
@@ -1506,6 +1690,156 @@ IconData _iconForCategory(String category) {
         ),
         const SizedBox(height: 90),
       ],
+    );
+  }
+}
+
+class _AiMetricCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _AiMetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: green, size: 20),
+          const SizedBox(height: 10),
+          Text(label, style: const TextStyle(color: muted, fontSize: 11)),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: dark,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiAnalysisContent extends StatelessWidget {
+  final String text;
+
+  const _AiAnalysisContent({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = text.split(RegExp(r'\r?\n'));
+    final widgets = <Widget>[];
+
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.isEmpty) {
+        widgets.add(const SizedBox(height: 5));
+        continue;
+      }
+
+      final headingMatch = RegExp(r'^\**\s*(?:\d+[.)]\s*)?(.+?)\s*\**$').firstMatch(line);
+      final isNumberedHeading = RegExp(r'^\d+[.)]\s*\*\*').hasMatch(line);
+      final isBoldHeading = line.startsWith('**') && line.endsWith('**');
+      final isHeading = isNumberedHeading || isBoldHeading;
+
+      if (isHeading) {
+        final heading = (headingMatch?.group(1) ?? line)
+            .replaceAll('**', '')
+            .replaceAll(RegExp(r'^\d+[.)]\s*'), '')
+            .trim();
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 4,
+                  height: 19,
+                  margin: const EdgeInsets.only(right: 9, top: 1),
+                  decoration: BoxDecoration(
+                    color: green,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    heading,
+                    style: const TextStyle(
+                      color: dark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else if (line.startsWith('- ') || line.startsWith('• ')) {
+        final body = line.substring(2).replaceAll('**', '').trim();
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 3, top: 3, bottom: 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 7, right: 9),
+                  child: Icon(Icons.circle, size: 6, color: green),
+                ),
+                Expanded(
+                  child: SelectableText(
+                    body,
+                    style: const TextStyle(
+                      color: Color(0xFF46554E),
+                      fontSize: 13,
+                      height: 1.55,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: SelectableText(
+              line.replaceAll('**', ''),
+              style: const TextStyle(
+                color: Color(0xFF46554E),
+                fontSize: 13,
+                height: 1.55,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets,
     );
   }
 }
