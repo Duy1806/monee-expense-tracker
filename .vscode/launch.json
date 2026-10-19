@@ -1,0 +1,15 @@
+
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Monee - Android + Gemini",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "330096c5d413c373",
+      "toolArgs": [
+        "--dart-define=..."
+      ]
+    }
+  ]
+}
