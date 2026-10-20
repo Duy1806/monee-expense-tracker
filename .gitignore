@@ -53,3 +53,7 @@ app.*.map.json
 *.sqlite3
 
 test.zip
+
+android/key.properties
+*.jks
+*.keystore
